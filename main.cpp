@@ -16,18 +16,19 @@
 #include <algorithm>
 #include "printpkt.hpp"
 
-static size_t num_points = 0;
+static size_t num_locations = 0;
 
 typedef struct packet_data {
 	picotime timestamp;
-	std::string mampid;
+  //	std::string mampid;
+	std::string location;  
 } packet_data;
 
 typedef struct packet_id {
 	packet_id()
 		: seq(0)
 		, num(0)
-		, data(num_points){}
+		, data(num_locations){}
 
 	unsigned int seq;
 	unsigned int num;
@@ -73,7 +74,7 @@ static void show_usage(){
 	       "                       Will look between Seek -- Count bytes. \n"
 	       "  -t, --timeout=SEC    Discards packets after SEC.\n"
 	       "  -b, --batchsize=N    Read batchsize packets, then exit.\n"
-	       "  -p N                 Number of points packets are expected to arrive at.\n"
+	       "  -p N                 Number of locations packets are expected to arrive at.\n"
 	       "  -d, --displaypkt     Show the packets.\n"
 	       "  -v, --verbose        Verbose.\n"
 	       "  -h, --help           This text.\n"
@@ -139,11 +140,11 @@ static void format(packet_id& pkt, const struct cap_header* cp, bool compact){
 
 	std::sort(pkt.data.begin(), pkt.data.end(), packet_sort);
 
-	for ( unsigned int i = 1; i < num_points; i++ ){
+	for ( unsigned int i = 1; i < num_locations; i++ ){
 		const timepico &a = pkt.data[i].timestamp;
 		const timepico &b = pkt.data[i-1].timestamp;
 		const timepico dt = timepico_sub(a, b);
-		fprintf(stdout, " %s %d.%012" PRIu64 " %s %d.%012" PRIu64, pkt.data[i-1].mampid.c_str(), b.tv_sec, b.tv_psec, pkt.data[i].mampid.c_str(), a.tv_sec, a.tv_psec);
+		fprintf(stdout, " %s %d.%012" PRIu64 " %s %d.%012" PRIu64, pkt.data[i-1].location.c_str(), b.tv_sec, b.tv_psec, pkt.data[i].location.c_str(), a.tv_sec, a.tv_psec);
 		fprintf(stdout, " %d.%012" PRIu64, dt.tv_sec, dt.tv_psec);
 	}
 	if(printpkt){
@@ -190,7 +191,7 @@ int main(int argc, char* argv[]){
 			break;
 
 		case 'p':
-			num_points = atoi(optarg);
+			num_locations = atoi(optarg);
 			break;
 
 		case 'b':
@@ -211,7 +212,7 @@ int main(int argc, char* argv[]){
 		}
 	}
 
-	if ( num_points < 2 ){
+	if ( num_locations < 2 ){
 		fprintf(stderr, "%s: need at least 2 expected points, use -p to specify.\n", program_name);
 		exit(1);
 	}
@@ -260,41 +261,51 @@ int main(int argc, char* argv[]){
 			fprintf(stdout,"hash=%s start=%zd, end=%zd\n",hex,offset,bytes);
 		}
 
+		
 		auto it = table.find(hash);
 		if ( it != table.end() ){ /* match found */
-			packet_id& id = it->second;
-
-			/* find duplicates (e.g. arp) */
-			unsigned int i;
-			for ( i = 0; i < id.num; i++ ){
-				if ( point == id.data[i].mampid ){
-					break;
-				}
-			}
-			if ( i < id.num ) continue;
-
-
-			id.data[id.num] = {cp->ts, point};
-			if ( ++id.num == num_points ){ /* passed all points */
-				matched++;
-				if(verbose) {
-				  fprintf(stdout,"matched = %d id = %d batchSize = %d \n",(int)matched, id.seq, batchSize);
-				}
-				    
-				if (batchSize>0) {
-				  if ( id.seq > batchSize ){
-				    running=false;
-				  }
-				}
-				format(id, cp,verbose);
-				table.erase(it);
-			}
+		  if(verbose) {
+		    fprintf(stdout,"Match \n");
+		  }
+		  packet_id& id = it->second;
+		  
+		  /* find duplicates (e.g. arp) */
+		  unsigned int i;
+		  for ( i = 0; i < id.num; i++ ){
+		    if ( point == id.data[i].location ){
+		      break;
+		    }
+		  }
+		  if ( i < id.num ) continue;
+		  
+		  
+		  id.data[id.num] = {cp->ts, point};
+		  if ( ++id.num == num_locations ){ /* passed all points */
+		    matched++;
+		    if(verbose) {
+		      fprintf(stdout,"matched = %d id = %d batchSize = %d \n",(int)matched, id.seq, batchSize);
+		    }
+		    
+		    if (batchSize>0) {
+		      if ( id.seq > batchSize ){
+			running=false;
+		      }
+		    }
+		    format(id, cp,verbose);
+		    table.erase(it);
+		  }
 		} else { /* no match */
-			packet_id id;
-			id.seq = ++gseq;
-			id.num = 1;
-			id.data[0] = {cp->ts, point};
-			table[hash] = id;
+		  if(verbose) {
+		    fprintf(stdout,"No match \n");
+		  }
+		  packet_id id;
+		  id.seq = ++gseq;
+		  id.num = 1;
+		  id.data[0] = {cp->ts, point};
+		  table[hash] = id;
+		}
+		if(verbose) {
+		  fprintf(stdout,"Next \n");
 		}
 	} while ( running );
 
