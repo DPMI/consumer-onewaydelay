@@ -49,6 +49,38 @@ static void print_tcp(FILE* dst, const struct ip* ip, const struct tcphdr* tcp, 
   fprintf(dst, " %s:%d ",inet_ntoa(ip->ip_dst),(u_int16_t)ntohs(tcp->dest));
 }
 
+static void print_tcp_ip(FILE* dst, const struct ip* ip, bool compact ){
+
+  const struct tcphdr* tcp = (const struct tcphdr *)((const uint8_t *)ip + (size_t)4*ip->ip_hl); 
+
+  if(!compact){
+    fprintf(dst, "TCP(%0x) ", ntohs(ip->ip_len) - 4*tcp->doff - 4*ip->ip_hl);
+  } else {
+    fprintf(dst, "TCP(HDR[%d]DATA[%0x]) \t [",4*tcp->doff, ntohs(ip->ip_len) - 4*tcp->doff - 4*ip->ip_hl);
+    if(tcp->syn) {
+      fprintf(dst, "S");
+    }
+    if(tcp->fin) {
+      fprintf(dst, "F");
+    }
+    if(tcp->ack) {
+      fprintf(dst, "A");
+    }
+    if(tcp->psh) {
+      fprintf(dst, "P");
+	}
+    if(tcp->urg) {
+      fprintf(dst, "U");
+    }
+    if(tcp->rst) {
+      fprintf(dst, "R");
+    }
+    fprintf(dst,"] ");
+  }
+  fprintf(dst, " %s:%d ",inet_ntoa(ip->ip_src),(u_int16_t)ntohs(tcp->source));
+  fprintf(dst, " %s:%d ",inet_ntoa(ip->ip_dst),(u_int16_t)ntohs(tcp->dest));
+}
+
 
 static void print_udp(FILE* dst, const struct ip* ip, const struct udphdr* udp, bool compact){
   if(!compact){
@@ -74,6 +106,36 @@ static void print_udp(FILE* dst, const struct ip* ip, const struct udphdr* udp, 
   }
 
 }
+
+
+static void print_udp_ip(FILE* dst, const struct ip* ip, bool compact){
+
+  const struct udphdr* udp = (const struct udphdr *)((const uint8_t *)ip + (size_t)4*ip->ip_hl); 
+  if(!compact){
+    fprintf(dst, "UDP[%d] %s:%d ",(u_int16_t)(ntohs(udp->len)-8),inet_ntoa(ip->ip_src),(u_int16_t)ntohs(udp->source));
+  } else {    
+    fprintf(dst, "UDP(HDR[8]DATA[%d])\t %s:%d ",(u_int16_t)(ntohs(udp->len)-8),inet_ntoa(ip->ip_src),(u_int16_t)ntohs(udp->source));
+  }
+  fprintf(dst, " %s:%d", inet_ntoa(ip->ip_dst),(u_int16_t)ntohs(udp->dest));
+
+  if ( ((u_int16_t)ntohs(udp->dest)>1499  && (u_int16_t)ntohs(udp->dest)<1511) 
+       || 
+       ((u_int16_t)ntohs(udp->source)>1499  && (u_int16_t)ntohs(udp->source)<1511)
+     ) {
+    fprintf(dst," tg ");
+
+    const void* payload=(const char*)udp+sizeof(struct udphdr);
+    //const void* payload2=(const char*)udp;
+  
+    message=(transfer_data*)payload;
+    fprintf(dst," %u:%u:%u:%u  ", ntohl(message->exp_id),ntohl(message->run_id),ntohl(message->key_id), ntohl(message->counter)); 
+    //    fprintf(dst," %u:%u:%u;%u  %p | %p <> %d ", ntohl(message->exp_id),ntohl(message->run_id),ntohl(message->key_id), ntohl(message->counter),payload,payload2, ntohs(udp->len) );
+     
+  }
+
+}
+
+
 
 static void print_icmp(FILE* dst, const struct ip* ip, const struct icmphdr* icmp, bool compact){
   if(!compact) {
