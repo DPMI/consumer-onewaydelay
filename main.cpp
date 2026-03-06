@@ -38,18 +38,18 @@
 
 #include "printpkt.hpp"
 
-static size_t num_points = 0;
+static size_t num_locations = 0;
 
 typedef struct packet_data {
     picotime timestamp;
-    std::string mampid;
+    std::string location;
 } packet_data;
 
 typedef struct packet_id {
     packet_id()
         : seq(0)
         , num(0)
-        , data(num_points){}
+        , data(num_locations){}
     unsigned int seq;
     unsigned int num;
     std::vector<packet_data> data;
@@ -192,45 +192,50 @@ static bool packet_sort(const packet_data& a, const packet_data& b) {
 }
 
 static void printPkt(packet_id& pkt, const struct cap_header* cp, bool compact, size_t offset, bool tcp, bool udp){
-    fprintf(stdout, "%d ", pkt.seq);
-    std::sort(pkt.data.begin(), pkt.data.end(), packet_sort);
+  fprintf(stdout, "%d (%ld) ", pkt.seq, offset);
+  std::sort(pkt.data.begin(), pkt.data.end(), packet_sort);
 
-    for ( unsigned int i = 1; i < num_points; i++ ){
-        const timepico &a = pkt.data[i].timestamp;
-        const timepico &b = pkt.data[i-1].timestamp;
-        const timepico dt = timepico_sub(a, b);
-        fprintf(stdout, " %s %d.%012" PRIu64 " %s %d.%012" PRIu64,
-                pkt.data[i-1].mampid.c_str(), b.tv_sec, b.tv_psec,
-                pkt.data[i].mampid.c_str(),   a.tv_sec, a.tv_psec);
-        fprintf(stdout, " %d.%012" PRIu64, dt.tv_sec, dt.tv_psec);
+  for ( unsigned int i = 1; i < num_locations; i++ ){
+    const timepico &a = pkt.data[i].timestamp;
+    const timepico &b = pkt.data[i-1].timestamp;
+    const timepico dt = timepico_sub(a, b);
+    fprintf(stdout, " %s %d.%012" PRIu64 " %s %d.%012" PRIu64,
+	    pkt.data[i-1].location.c_str(), b.tv_sec, b.tv_psec,
+	    pkt.data[i].location.c_str(),   a.tv_sec, a.tv_psec);
+    fprintf(stdout, " %d.%012" PRIu64, dt.tv_sec, dt.tv_psec);
+  }
+  
+  if (printpkt){
+    if (compact){
+      fprintf(stdout, " LINK(%4d) CAPLEN(%4d):", cp->len, cp->caplen);
     }
-
-    if (printpkt){
-        if (compact){
-            fprintf(stdout, " LINK(%4d) CAPLEN(%4d):", cp->len, cp->caplen);
-        }
-        fprintf(stdout," ");
-        switch(base_layer){
-            case BASE_PAYLOAD:
-                /* TBD*/
-                break;
-
-            case BASE_TRANSPORT:
-                if (tcp) print_tcp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+offset), compact);
-                if (udp) print_udp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+offset), compact);
-                break;
-
-            case BASE_NETWORK:
-                print_ipv4(stdout, (const ip*)(cp->ethhdr+offset), compact);
-                break;
-
-            case BASE_FRAME:
-            default:
-                print_eth(stdout, cp->ethhdr, compact);
-                break;
-        } 
-    }
-    fprintf(stdout, "\n");
+    fprintf(stdout," ");
+    switch(base_layer){
+    case BASE_PAYLOAD:
+      /* TBD*/
+      if (verbose) {
+	fprintf(stdout, "|TBD, offset = %ld| ", offset);
+      }
+      /* Add logic to identify what payload */
+      print_tg(stdout, (const struct tg_Protocol*)((const uint8_t *)cp->payload+offset), compact);
+      break;
+      
+    case BASE_TRANSPORT:
+      if (tcp) print_tcp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+offset), compact);
+      if (udp) print_udp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+offset), compact);
+      break;
+      
+    case BASE_NETWORK:
+      print_ipv4(stdout, (const ip*)(cp->ethhdr+offset), compact);
+      break;
+      
+    case BASE_FRAME:
+    default:
+      print_eth(stdout, cp->ethhdr, compact);
+      break;
+    } 
+  }
+  fprintf(stdout, "\n");
 }
 
 // ---------------- Layer offset computation (Ethernet + VLAN + IPv4/IPv6 + TCP/UDP) ----------------
@@ -598,7 +603,7 @@ int main(int argc, char* argv[]){
             timeout = atoi(optarg);
             break;
         case 'p':
-            num_points = atoi(optarg);
+            num_locations = atoi(optarg);
             break;
         case 'b':
             batchSize = (uint32_t)atoi(optarg);
@@ -615,7 +620,7 @@ int main(int argc, char* argv[]){
         }
     }
 
-    if ( num_points < 2 ){
+    if ( num_locations < 2 ){
         fprintf(stderr, "%s: need at least 2 expected points, use -p to specify.\n", program_name);
     //	exit(1);
     }
@@ -725,20 +730,29 @@ int main(int argc, char* argv[]){
 
         /* Apply regex filters if any (AND logic across provided patterns) */
         if (regex_mode) {
-            if (!regex_match_all(slice, bytes)) {
-                continue; // does not satisfy all patterns
-            }
-
+	  if (verbose) {
+	    fprintf(stdout,"Regex_mode \n");
+	  }
+	  if (!regex_match_all(slice, bytes)) {
+	    continue; // does not satisfy all patterns
+	  }
+	  
             
-            if (!regex_match_all_identity(reinterpret_cast<const unsigned char*>(cp->payload),
-                cp->caplen,
-                identity_buf, sizeof(identity_buf),
-                &identity_sig)) {
-                // One of the patterns did not match -> drop (AND semantics)
-                    continue;
-            }
+	  if (!regex_match_all_identity(reinterpret_cast<const unsigned char*>(cp->payload),
+					cp->caplen,
+					identity_buf, sizeof(identity_buf),
+					&identity_sig)) {
+	    // One of the patterns did not match -> drop (AND semantics)
+	    if (verbose) {
+	      fprintf(stdout,"No match \n");
+	    }
+	    continue;
+	  }
 
         } else {
+	  if (verbose) {
+	    fprintf(stdout,"Std_mode \n");
+	  }
             /* Calculate SHA-256 over the slice to create a stable correlation key. */
             EVP_Digest(slice, bytes, pktHash, &hash_len, EVP_sha256(), NULL);
 
@@ -766,30 +780,32 @@ int main(int argc, char* argv[]){
         if ( verbose ) {
             fprintf(stdout, "[%4ld]:%.4s:%.8s:", matched, cp->nic, cp->mampid);
             fprintf(stdout, "LINK(%4d):CAPLEN(%4d):", cp->len, cp->caplen);
-            switch(base_layer){
-                case BASE_PAYLOAD:
-                    /* TBD */
-                    applied_offset=l7;
-                    break;
-
-                case BASE_TRANSPORT:
-                    if (tcp) print_tcp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
-                    if (udp) print_udp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
-                    applied_offset=l4;
-                    break;
-
-                case BASE_NETWORK:
-                    print_ipv4(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
-                    applied_offset=l3;
-                    break;
-
-                case BASE_FRAME:
-                default:
-                    print_eth(stdout, cp->ethhdr, compact);
-                    applied_offset=l2;
-
-                    break;
-            } 
+	}
+	switch(base_layer){
+	case BASE_PAYLOAD:
+	  /* TBD */
+	  applied_offset=l7;
+	  break;
+	  
+	case BASE_TRANSPORT:
+	  if (tcp) print_tcp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
+	  if (udp) print_udp_ip(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
+	  applied_offset=l4;
+	  break;
+	  
+	case BASE_NETWORK:
+	  print_ipv4(stdout, (const ip*)((const uint8_t *)cp->payload+l3), compact);
+	  applied_offset=l3;
+	  break;
+	  
+	case BASE_FRAME:
+	default:
+	  print_eth(stdout, cp->ethhdr, compact);
+	  applied_offset=l2;
+	  
+	  break;
+	}
+	if ( verbose)  {
             fprintf(stdout," hash=%s base_off=%zu start=%zu end=%zu bytes=%zu\n", hex, base_offset, start, end, bytes);
         }
 
@@ -799,14 +815,17 @@ int main(int argc, char* argv[]){
             /* find duplicates (e.g. same point twice) */
             unsigned int i;
             for ( i = 0; i < id.num; i++ ){
-                if ( point == id.data[i].mampid ){
-                    break;
+                if ( point == id.data[i].location ){
+		  if (verbose) {
+		    fprintf(stdout,"Duplicate match, same location. \n");
+		  }
+		  break;
                 }
             }
             if ( i < id.num ) continue;
             id.data[id.num] = {cp->ts, point};
 
-            if ( ++id.num == num_points ){ /* passed all points */
+            if ( ++id.num == num_locations ){ /* passed all points */
                 matched++;
                 if(verbose) {
                     fprintf(stdout,"matched = %d id = %d batchSize = %d \n",(int)matched, id.seq, batchSize);
@@ -820,6 +839,9 @@ int main(int argc, char* argv[]){
                 table.erase(it);
             }
         } else { /* no match */
+	  if (verbose) {
+	    fprintf(stdout,"Adding packet to list \n");
+	  }
             packet_id id;
             id.seq = ++gseq;
             id.num = 1;

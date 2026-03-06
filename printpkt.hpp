@@ -19,6 +19,32 @@ typedef struct{
 transfer_data *message; 
 
 
+/* Not the way to do it. */
+
+struct tg_Protocol {
+  u_int32_t exp_id;// Experiment ID
+  u_int32_t run_id;// Run ID
+  u_int32_t key_id;// Key ID
+  u_int32_t counter;// Packet Counter
+  u_int64_t starttime;// Start of packet transmission time, comes with packet.counter+1
+  u_int64_t stoptime;// Stopt of packet transmission time,  comes with packet.counter+1
+  struct timeval depttime; // Departure time. 
+  u_int64_t recvstarttime; // Receive start and stop time, recorded at receiver.
+  u_int64_t recvstoptime; // Receive start and stop time, recorded at receiver.
+  struct timeval recvtime;// Receive time
+  // After this comes the payload. 
+};
+
+static void print_tg(FILE* dst, const struct tg_Protocol* ptr, bool compact ){  
+  struct tg_Protocol h = *(const struct tg_Protocol*)ptr;
+  
+ 
+  fprintf(dst, "TG ");
+  fprintf(dst, "%d:%d:%d:%d ",ntohl(h.exp_id),ntohl(h.run_id),ntohl(h.key_id),ntohl(h.counter));   
+ 
+  
+}
+
 
 static void print_tcp(FILE* dst, const struct ip* ip, const struct tcphdr* tcp, bool compact ){
   if(!compact){
