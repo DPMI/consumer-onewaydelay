@@ -249,18 +249,22 @@ static void print_eth(FILE* dst, const struct ethhdr* eth,bool compact){
  begin:
 
 	if(h_proto<0x05DC){
-		fprintf(dst, "IEEE802.3 ");
-		fprintf(dst, "  %02x:%02x:%02x:%02x:%02x:%02x -> %02x:%02x:%02x:%02x:%02x:%02x ",
-		        eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5],
-		        eth->h_dest[0],  eth->h_dest[1],  eth->h_dest[2],  eth->h_dest[3],  eth->h_dest[4],  eth->h_dest[5]);
-		print_ieee8023(dst,(struct llc_pdu_sn*)payload);
+	  if (compact){
+	    fprintf(dst, "IEEE802.3 ");
+	    fprintf(dst, "  %02x:%02x:%02x:%02x:%02x:%02x -> %02x:%02x:%02x:%02x:%02x:%02x ",
+		    eth->h_source[0],eth->h_source[1],eth->h_source[2],eth->h_source[3],eth->h_source[4],eth->h_source[5],
+		    eth->h_dest[0],  eth->h_dest[1],  eth->h_dest[2],  eth->h_dest[3],  eth->h_dest[4],  eth->h_dest[5]);
+	    print_ieee8023(dst,(struct llc_pdu_sn*)payload);
+	  }
 	} else {
 		switch ( h_proto ){
 		case ETHERTYPE_VLAN:
 			vlan_tci = ((uint16_t*)payload)[0];
 			h_proto = ntohs(((uint16_t*)payload)[0]);
 			payload = ((char*)eth) + sizeof(struct ethhdr);
-			fprintf(dst, "802.1Q vlan# %d: ", 0x0FFF&ntohs(vlan_tci));
+			if (compact) {
+			  fprintf(dst, "802.1Q vlan# %d: ", 0x0FFF&ntohs(vlan_tci));
+			}
 			goto begin;
 
 		case ETHERTYPE_IP:

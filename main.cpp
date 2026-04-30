@@ -192,7 +192,12 @@ static bool packet_sort(const packet_data& a, const packet_data& b) {
 }
 
 static void printPkt(packet_id& pkt, const struct cap_header* cp, bool compact, size_t offset, bool tcp, bool udp){
-  fprintf(stdout, "%d (%ld) ", pkt.seq, offset);
+  if (compact) {
+    fprintf(stdout, "%d (%ld) ", pkt.seq, offset);
+  } else {
+    fprintf(stdout, "%d ", pkt.seq);
+
+  }
   std::sort(pkt.data.begin(), pkt.data.end(), packet_sort);
 
   for ( unsigned int i = 1; i < num_locations; i++ ){
